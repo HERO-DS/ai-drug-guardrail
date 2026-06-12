@@ -3,97 +3,97 @@ import pandas as pd
 from rdkit import Chem
 from rdkit.Chem import AllChem
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import roc_auc_score, classification_report
 import joblib
 import os
 
-# Define file paths for saving/loading the trained model weights
-MODEL_DIR = os.path.join(os.path.dirname(__file__), "..", "models")
+# Set up project directory pathways
+DATA_PATH = "data/bbbp_cleaned.csv"
+MODEL_DIR = "models"
 MODEL_PATH = os.path.join(MODEL_DIR, "guardrail_rf.pkl")
 
 def smiles_to_fingerprint(smiles: str, radius: int = 2, n_bits: int = 2048):
     """
-    Converts a chemical SMILES text string into a numerical vector (Morgan Fingerprint)
-    so mathematical Machine Learning models can interpret the structure.
+    Converts a chemical text sequence (SMILES) into a 2048-bit numerical matrix 
+    representing the molecular framework.
     """
-    # Parse the text string into a concrete RDKit Molecule object
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
-        return None # Return None if the string is chemically invalid
-    
-    # Generate a 2048-bit bit-vector mapping the atomic neighborhoods
+        return None
     fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=radius, nBits=n_bits)
-    
-    # Convert the bit-vector into a standard NumPy array of 0s and 1s
     return np.array(fp)
 
-def train_baseline_model():
-    """
-    Simulates training on a baseline sample dataset from the Therapeutics Data Commons
-    to instantly generate model weights without needing a heavy external download.
-    """
-    print("Initializing baseline training sequence...")
+def train_production_model():
+    print("====== TRAINING PRODUCTION GUARDRAIL MODEL ======\n")
     
-    # Synthetic drug sample strings (SMILES) and their binary safety labels (1 = Crosses BBBP, 0 = Blocked)
-    sample_data = {
-        "smiles": [
-            "CC(=O)NC1=CC=C(C=C1)O", "CN1C=NC2=C1C(=O)N(C(=O)N2C)C", 
-            "CC1=C(C(=C(C=C1)O)O)C(=O)C2=CC=C(C=C2)O", "CCN(CC)C(=O)C1CN(C2=CC=CC3=C2C1=CN3)C",
-            "C1=CC=C(C=C1)C(C2=CC=CC=C2)(C3=CC=CC=C3)Cl", "N[C@@H](CC1=CC=CC=C1)C(=O)O"
-        ],
-        "label": [1, 1, 0, 1, 0, 0]
-    }
-    df = pd.DataFrame(sample_data)
+    if not os.path.exists(DATA_PATH):
+        raise FileNotFoundError(f"Cleaned dataset missing at {DATA_PATH}. Run eda_cleaning.py first.")
+        
+    # 1. Load the processed dataset
+    df = pd.read_csv(DATA_PATH)
     
-    # Extract structural molecular arrays for training
     X = []
     y = []
+    
+    print("Transforming validated chemical molecular structures into Morgan Fingerprints...")
     for idx, row in df.iterrows():
-        fp = smiles_to_fingerprint(row["smiles"])
+        fp = smiles_to_fingerprint(row['smiles'])
         if fp is not None:
             X.append(fp)
-            y.append(row["label"])
+            y.append(row['target'])
             
     X = np.array(X)
     y = np.array(y)
     
-    # Train our highly efficient, low-latency CPU Ensemble model
-    model = RandomForestClassifier(n_estimators=10, random_state=42)
-    model.fit(X, y)
+    # 2. Split into Train/Test subsets to prevent structural overfitting
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42, stratify=y)
     
-    # Ensure the models/ directory exists before saving
+    print(f"[LOG] Training Features Matrix Shape: {X_train.shape}")
+    print(f"[LOG] Testing Features Matrix Shape: {X_test.shape}")
+    
+    # 3. Fit a lightweight CPU Random Forest Ensemble
+    model = RandomForestClassifier(n_estimators=100, max_depth=15, random_state=42, n_jobs=-1)
+    model.fit(X_train, y_train)
+    
+    # 4. Evaluate operational efficacy using ROC-AUC (The MNC standard metric for imbalanced classifications)
+    test_probs = model.predict_proba(X_test)[:, 1]
+    auc_score = roc_auc_score(y_test, test_probs)
+    print(f"\n[EVALUATION] Model ROC-AUC Score: {auc_score:.4f}")
+    
+    # 5. Export structural binary serialization weights
     os.makedirs(MODEL_DIR, exist_ok=True)
     joblib.dump(model, MODEL_PATH)
-    print(f"Model successfully saved to {MODEL_PATH}")
+    print(f"[SUCCESS] Model artifact locked down and exported to: {MODEL_PATH}\n")
 
 def predict_molecule_safety(smiles: str):
     """
-    Loads the saved model snapshot and runs high-throughput inference on a molecule string.
+    Consumes a query string from the API gateway and outputs safety classifications.
     """
-    # Automatically trigger mock training if the model file does not exist yet
     if not os.path.exists(MODEL_PATH):
-        train_baseline_model()
+        train_production_model()
         
     model = joblib.load(MODEL_PATH)
     fp = smiles_to_fingerprint(smiles)
     
     if fp is None:
-        return {"status": "error", "message": "Invalid chemical SMILES structure."}
-    
-    # Reshape array for a single sample prediction
+        return {"status": "error", "message": "Invalid or unparsable chemical structure."}
+        
     fp_array = fp.reshape(1, -1)
-    
-    # Run the model logic
     prediction = int(model.predict(fp_array)[0])
     probability = float(model.predict_proba(fp_array)[0][1])
     
-    # Heuristic score for synthetic accessibility based on molecular length/complexity
-    synthetic_complexity = round(min(10.0, len(smiles) / 10.0 + (smiles.count("=") * 0.5)), 2)
+    # Structural complexity proxy heuristic based on sequence atom features
+    synthetic_complexity = round(min(10.0, len(smiles) / 12.0 + (smiles.count("=") * 0.4)), 2)
     
     return {
         "status": "success",
         "smiles": smiles,
         "blood_brain_barrier_penetration": "Passes" if prediction == 1 else "Blocked",
-        "pass_probability": probability,
+        "pass_probability": round(probability, 4),
         "synthetic_complexity_score": synthetic_complexity,
-        "action_recommended": "Approve for Lab Synthesis" if (prediction == 1 and synthetic_complexity < 4.5) else "Flagged/Reject"
+        "action_recommended": "Approve for Lab Synthesis" if (prediction == 1 and synthetic_complexity < 4.8) else "Flagged/Reject"
     }
+
+if __name__ == "__main__":
+    train_production_model()
