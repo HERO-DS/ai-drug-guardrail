@@ -1,0 +1,43 @@
+name: Production CI Pipeline
+
+# Trigger this cloud pipeline automatically every time code is pushed to GitHub
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  automated-testing:
+    runs-on: ubuntu-latest
+
+    steps:
+    # Step 1: Tell the cloud runner to clone your GitHub repository code
+    - name: Checkout Repository Code
+      uses: actions/checkout@v3
+
+    # Step 2: Provision an isolated, clean Python environment in the cloud
+    - name: Set up Python 3.11
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    # Step 3: Cache pip dependencies so future cloud runs take less than 10 seconds
+    - name: Cache Pip Dependencies
+      uses: actions/cache@v3
+      with:
+        path: ~/.cache/pip
+        key: ${{ runner.os }}-pip-${{ hashFiles('**/requirements.txt') }}
+        restore-keys: |
+          ${{ runner.os }}-pip-
+
+    # Step 4: Install all project libraries into the cloud container
+    - name: Install Dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+
+    # Step 5: Execute your automated testing suite in the cloud environment
+    - name: Run Automated Test Suite
+      run: |
+        pytest -v
