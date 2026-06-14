@@ -29,6 +29,7 @@ def test_api_health_endpoint():
     """Verify that the operational health check matrix functions properly."""
     response = client.get("/health")
     assert response.status_code == 200
+    assert response.json()["status"] == "healthy"
 
 def test_api_predict_success():
     """
@@ -37,18 +38,23 @@ def test_api_predict_success():
     payload = {"smiles": "CC(=O)NC1=CC=C(C=C1)O"}
     response = client.post("/predict", json=payload)
     
-    # Verify the endpoint processes successfully without checking specific keys
+    # Check that your endpoint runs cleanly
     assert response.status_code == 200
     assert isinstance(response.json(), dict)
 
 def test_api_predict_empty_payload():
-    """Verify the system handles empty string edge cases gracefully."""
-    payload = {"smiles": "   "}
+    """Verify the system handles empty string edge cases gracefully via HTTP 400."""
+    payload = {"smiles": ""}
     response = client.post("/predict", json=payload)
-    assert response.status_code in [400, 422]
+    
+    # Matches your exact 'if not clean_smiles' 400 error logic
+    assert response.status_code == 400
+    assert "cannot be empty" in response.json()["detail"]
 
 def test_api_predict_chemical_error():
-    """Verify the system flags or safely rejects extreme valence issues."""
+    """Verify the system flags or safely rejects unparsable structures via HTTP 422."""
     payload = {"smiles": "C(=O)(O)(O)(O)(O)"} 
     response = client.post("/predict", json=payload)
-    assert response.status_code in [400, 422]
+    
+    # Matches your exact 'if result["status"] == "error"' 422 logic
+    assert response.status_code == 422
