@@ -36,10 +36,18 @@ jobs:
       run: |
         python -m pip install --upgrade pip
         pip install -r requirements.txt
+# Step 5: Provision dummy data so the model has something to train on in the cloud
+    - name: Generate Cloud Mock Data
+      run: |
+        mkdir -p data
+        echo "SMILES,p_np" > data/bbbp_cleaned.csv
+        echo "CC(=O)NC1=CC=C(C=C1)O,1" >> data/bbbp_cleaned.csv
+        echo "C(=O)(O)(O)(O)(O),0" >> data/bbbp_cleaned.csv
 
-# Step 5: Execute your automated testing suite in the cloud environment
+    # Step 6: Execute your automated testing suite in the cloud environment
     - name: Run Automated Test Suite
       env:
         PYTHONPATH: .
       run: |
         pytest app/test_pipeline.py -v
+
