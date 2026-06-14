@@ -37,7 +37,9 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
 
-    # Step 5: Execute your automated testing suite in the cloud environment
+# Step 5: Execute your automated testing suite in the cloud environment
     - name: Run Automated Test Suite
+      env:
+        PYTHONPATH: .
       run: |
-        pytest -v
+        pytest app/test_pipeline.py -v
