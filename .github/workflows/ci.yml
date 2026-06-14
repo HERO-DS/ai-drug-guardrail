@@ -40,7 +40,7 @@ jobs:
     - name: Generate Cloud Mock Data
       run: |
         mkdir -p data
-        echo "SMILES,p_np" > data/bbbp_cleaned.csv
+        echo "smiles,target" > data/bbbp_cleaned.csv
         echo "CC(=O)NC1=CC=C(C=C1)O,1" >> data/bbbp_cleaned.csv
         echo "C(=O)(O)(O)(O)(O),0" >> data/bbbp_cleaned.csv
 
